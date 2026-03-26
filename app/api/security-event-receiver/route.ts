@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import * as jose from "jose"
+import { addEvent } from "@/lib/events-store"
 
 // Allowed OAuth client IDs for InTellMe projects
 const ALLOWED_CLIENT_IDS = [
@@ -18,18 +19,6 @@ const GOOGLE_ISSUER = "https://accounts.google.com"
 // Expected audience (your receiver URL)
 const EXPECTED_AUDIENCE = "https://risc.intellmeai.com/security-event-receiver"
 
-// RISC event types
-const RISC_EVENT_TYPES = {
-  SESSION_REVOKED: "https://schemas.openid.net/secevent/risc/event-type/sessions-revoked",
-  TOKEN_REVOKED: "https://schemas.openid.net/secevent/oauth/event-type/tokens-revoked",
-  ACCOUNT_DISABLED: "https://schemas.openid.net/secevent/risc/event-type/account-disabled",
-  ACCOUNT_ENABLED: "https://schemas.openid.net/secevent/risc/event-type/account-enabled",
-  ACCOUNT_CREDENTIAL_CHANGE_REQUIRED:
-    "https://schemas.openid.net/secevent/risc/event-type/account-credential-change-required",
-  ACCOUNT_PURGED: "https://schemas.openid.net/secevent/risc/event-type/account-purged",
-  VERIFICATION: "https://schemas.openid.net/secevent/risc/event-type/verification",
-}
-
 // Cache for Google's JWKS
 let jwksCache: jose.JWTVerifyGetKey | null = null
 
@@ -45,7 +34,7 @@ interface SecurityEventToken {
   aud: string
   iat: number
   jti: string
-  events: Record<string, { subject: { subject_type: string; iss?: string; sub?: string } }>
+  events: Record<string, { subject?: { subject_type?: string; iss?: string; sub?: string } }>
 }
 
 async function verifySecurityEventToken(token: string): Promise<SecurityEventToken> {
@@ -57,53 +46,6 @@ async function verifySecurityEventToken(token: string): Promise<SecurityEventTok
   })
 
   return payload as unknown as SecurityEventToken
-}
-
-function handleSecurityEvent(eventType: string, eventData: Record<string, unknown>, jti: string): void {
-  const timestamp = new Date().toISOString()
-
-  switch (eventType) {
-    case RISC_EVENT_TYPES.SESSION_REVOKED:
-      console.log(`[RISC][${timestamp}] Sessions revoked event (jti: ${jti}):`, JSON.stringify(eventData))
-      // TODO: Invalidate all sessions for the user
-      break
-
-    case RISC_EVENT_TYPES.TOKEN_REVOKED:
-      console.log(`[RISC][${timestamp}] Tokens revoked event (jti: ${jti}):`, JSON.stringify(eventData))
-      // TODO: Revoke stored tokens for the user
-      break
-
-    case RISC_EVENT_TYPES.ACCOUNT_DISABLED:
-      console.log(`[RISC][${timestamp}] Account disabled event (jti: ${jti}):`, JSON.stringify(eventData))
-      // TODO: Disable user account in your system
-      break
-
-    case RISC_EVENT_TYPES.ACCOUNT_ENABLED:
-      console.log(`[RISC][${timestamp}] Account enabled event (jti: ${jti}):`, JSON.stringify(eventData))
-      // TODO: Re-enable user account in your system
-      break
-
-    case RISC_EVENT_TYPES.ACCOUNT_CREDENTIAL_CHANGE_REQUIRED:
-      console.log(
-        `[RISC][${timestamp}] Credential change required event (jti: ${jti}):`,
-        JSON.stringify(eventData)
-      )
-      // TODO: Force password reset or re-authentication
-      break
-
-    case RISC_EVENT_TYPES.ACCOUNT_PURGED:
-      console.log(`[RISC][${timestamp}] Account purged event (jti: ${jti}):`, JSON.stringify(eventData))
-      // TODO: Delete user data from your system
-      break
-
-    case RISC_EVENT_TYPES.VERIFICATION:
-      console.log(`[RISC][${timestamp}] Verification event (jti: ${jti}):`, JSON.stringify(eventData))
-      // This is a test event from Google to verify the endpoint
-      break
-
-    default:
-      console.log(`[RISC][${timestamp}] Unknown event type (jti: ${jti}): ${eventType}`, JSON.stringify(eventData))
-  }
 }
 
 export async function POST(request: NextRequest) {
@@ -140,10 +82,19 @@ export async function POST(request: NextRequest) {
       const subject = eventData?.subject
       if (subject?.iss && !ALLOWED_CLIENT_IDS.includes(subject.iss)) {
         console.warn(`[RISC] Event from unknown client ID: ${subject.iss}`)
-        // Still process the event but log the warning
       }
 
-      handleSecurityEvent(eventType, eventData as Record<string, unknown>, payload.jti)
+      // Store the event
+      const storedEvent = addEvent({
+        jti: payload.jti,
+        eventType,
+        eventData: eventData as Record<string, unknown>,
+        subject: subject,
+        receivedAt: new Date().toISOString(),
+        issuer: payload.iss,
+      })
+
+      console.log(`[RISC] Stored event ${storedEvent.id}: ${eventType}`)
     }
 
     // Return 202 Accepted as per RISC spec

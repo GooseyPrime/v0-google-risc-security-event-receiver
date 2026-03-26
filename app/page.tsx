@@ -1,5 +1,8 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import Link from "next/link"
+import { Shield } from "lucide-react"
 
 const OAUTH_CLIENT_IDS = [
   "512852924896-bipo81kgpes320pivlunlh8897bsn038",
@@ -54,6 +57,14 @@ export default function Home() {
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Status</p>
                 <Badge variant="default" className="mt-1 bg-green-600">Active</Badge>
+              </div>
+              <div className="pt-2">
+                <Button asChild>
+                  <Link href="/events">
+                    <Shield className="h-4 w-4 mr-2" />
+                    View Security Events Log
+                  </Link>
+                </Button>
               </div>
             </CardContent>
           </Card>
