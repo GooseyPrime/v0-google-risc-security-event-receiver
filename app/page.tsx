@@ -3,16 +3,13 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { Shield } from "lucide-react"
+import { RiscStreamManager } from "@/components/risc-stream-manager"
+import { getServiceAccountEmail } from "@/lib/google-auth"
 
-const OAUTH_CLIENT_IDS = [
-  "512852924896-bipo81kgpes320pivlunlh8897bsn038",
-  "512852924896-mkfn3gbgltmp9u55dspqmbag3oljv726",
-  "512852924896-2nhh354ns3ulgpgah3snafp24pt9n347",
-  "512852924896-h10347q881ir4un05lfkqt4q7b9csc9p",
-  "512852924896-tprr4bk7p19mtetb1r5i0la6aiav1qn7",
-  "512852924896-dprrp9mcgpoh40cqk91i30qqr67ijtj5",
-  "512852924896-4qdklbl5oihtr51hbr9uo2indbri944l",
-]
+const OAUTH_CLIENT_IDS = (process.env.ALLOWED_CLIENT_IDS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean)
 
 const SUPPORTED_EVENTS = [
   { name: "Sessions Revoked", description: "User sessions invalidated" },
@@ -25,17 +22,26 @@ const SUPPORTED_EVENTS = [
 ]
 
 export default function Home() {
+  const receiverUrl =
+    process.env.RECEIVER_URL ||
+    (process.env.NEXT_PUBLIC_APP_URL
+      ? `${process.env.NEXT_PUBLIC_APP_URL}/security-event-receiver`
+      : "https://risc.intellmeai.com/security-event-receiver")
+
+  const serviceAccount = getServiceAccountEmail()
+
   return (
     <div className="min-h-screen bg-background p-8">
       <div className="mx-auto max-w-4xl">
         <header className="mb-8">
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Google RISC for InTellMe</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">Google RISC Receiver</h1>
           <p className="mt-2 text-muted-foreground">
-            Real-time Identity Security Events Receiver
+            Real-time Identity and Cross-Account Protection (RISC) Security Events Receiver
           </p>
         </header>
 
         <div className="grid gap-6">
+          {/* Service Status */}
           <Card>
             <CardHeader>
               <CardTitle>Service Status</CardTitle>
@@ -44,15 +50,21 @@ export default function Home() {
             <CardContent className="space-y-4">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Receiver URL</p>
-                <code className="mt-1 block rounded bg-muted px-3 py-2 text-sm">
-                  https://risc.intellmeai.com/security-event-receiver
+                <code className="mt-1 block rounded bg-muted px-3 py-2 text-sm break-all">
+                  {receiverUrl}
                 </code>
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Service Account</p>
-                <code className="mt-1 block rounded bg-muted px-3 py-2 text-sm">
-                  risc-admin@intellmeprojects.iam.gserviceaccount.com
-                </code>
+                {serviceAccount ? (
+                  <code className="mt-1 block rounded bg-muted px-3 py-2 text-sm">
+                    {serviceAccount}
+                  </code>
+                ) : (
+                  <p className="mt-1 text-sm text-destructive">
+                    ⚠ GOOGLE_SERVICE_ACCOUNT_KEY not configured
+                  </p>
+                )}
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Status</p>
@@ -69,22 +81,33 @@ export default function Home() {
             </CardContent>
           </Card>
 
+          {/* RISC Stream Registration */}
+          <RiscStreamManager />
+
+          {/* Registered OAuth Clients */}
           <Card>
             <CardHeader>
-              <CardTitle>Registered OAuth Clients</CardTitle>
-              <CardDescription>{OAUTH_CLIENT_IDS.length} client IDs configured</CardDescription>
+              <CardTitle>OAuth Client Filter</CardTitle>
+              <CardDescription>
+                {OAUTH_CLIENT_IDS.length > 0
+                  ? `${OAUTH_CLIENT_IDS.length} client ID(s) configured via ALLOWED_CLIENT_IDS`
+                  : "No ALLOWED_CLIENT_IDS set — events from all project clients are accepted"}
+              </CardDescription>
             </CardHeader>
-            <CardContent>
-              <ul className="space-y-2">
-                {OAUTH_CLIENT_IDS.map((id) => (
-                  <li key={id}>
-                    <code className="rounded bg-muted px-2 py-1 text-xs">{id}</code>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
+            {OAUTH_CLIENT_IDS.length > 0 && (
+              <CardContent>
+                <ul className="space-y-2">
+                  {OAUTH_CLIENT_IDS.map((id) => (
+                    <li key={id}>
+                      <code className="rounded bg-muted px-2 py-1 text-xs">{id}</code>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            )}
           </Card>
 
+          {/* Supported Event Types */}
           <Card>
             <CardHeader>
               <CardTitle>Supported Event Types</CardTitle>

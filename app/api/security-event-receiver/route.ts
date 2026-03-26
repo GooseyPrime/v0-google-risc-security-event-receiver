@@ -2,29 +2,50 @@ import { NextRequest, NextResponse } from "next/server"
 import * as jose from "jose"
 import { addEvent } from "@/lib/events-store"
 
-// Allowed OAuth client IDs for InTellMe projects
-const ALLOWED_CLIENT_IDS = [
-  "512852924896-bipo81kgpes320pivlunlh8897bsn038.apps.googleusercontent.com",
-  "512852924896-mkfn3gbgltmp9u55dspqmbag3oljv726.apps.googleusercontent.com",
-  "512852924896-2nhh354ns3ulgpgah3snafp24pt9n347.apps.googleusercontent.com",
-  "512852924896-h10347q881ir4un05lfkqt4q7b9csc9p.apps.googleusercontent.com",
-  "512852924896-tprr4bk7p19mtetb1r5i0la6aiav1qn7.apps.googleusercontent.com",
-  "512852924896-dprrp9mcgpoh40cqk91i30qqr67ijtj5.apps.googleusercontent.com",
-  "512852924896-4qdklbl5oihtr51hbr9uo2indbri944l.apps.googleusercontent.com",
-]
-
 // Google's RISC issuer
 const GOOGLE_ISSUER = "https://accounts.google.com"
 
-// Expected audience (your receiver URL)
-const EXPECTED_AUDIENCE = "https://risc.intellmeai.com/security-event-receiver"
+/**
+ * The audience value must exactly match what was registered with Google as
+ * the receiver URL.  Configure this via the RECEIVER_URL environment variable.
+ *
+ * If RECEIVER_URL is not set we fall back to constructing the URL from
+ * NEXT_PUBLIC_APP_URL so local development still works without extra config.
+ */
+function getExpectedAudience(): string {
+  return (
+    process.env.RECEIVER_URL ||
+    (process.env.NEXT_PUBLIC_APP_URL
+      ? `${process.env.NEXT_PUBLIC_APP_URL}/security-event-receiver`
+      : "https://risc.intellmeai.com/security-event-receiver")
+  )
+}
+
+/**
+ * Optional allow-list of OAuth client IDs (the `iss` field in the event
+ * subject).  Set ALLOWED_CLIENT_IDS as a comma-separated list of full client
+ * IDs (including ".apps.googleusercontent.com") to restrict which clients
+ * are accepted.  Leave unset to accept events from any registered client.
+ */
+function getAllowedClientIds(): Set<string> | null {
+  const raw = process.env.ALLOWED_CLIENT_IDS
+  if (!raw) return null // no restriction
+  return new Set(
+    raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+  )
+}
 
 // Cache for Google's JWKS
 let jwksCache: jose.JWTVerifyGetKey | null = null
 
 async function getGoogleJWKS(): Promise<jose.JWTVerifyGetKey> {
   if (!jwksCache) {
-    jwksCache = jose.createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs"))
+    jwksCache = jose.createRemoteJWKSet(
+      new URL("https://www.googleapis.com/oauth2/v3/certs")
+    )
   }
   return jwksCache
 }
@@ -42,7 +63,7 @@ async function verifySecurityEventToken(token: string): Promise<SecurityEventTok
 
   const { payload } = await jose.jwtVerify(token, jwks, {
     issuer: GOOGLE_ISSUER,
-    audience: EXPECTED_AUDIENCE,
+    audience: getExpectedAudience(),
   })
 
   return payload as unknown as SecurityEventToken
@@ -78,9 +99,10 @@ export async function POST(request: NextRequest) {
     }
 
     for (const [eventType, eventData] of Object.entries(events)) {
-      // Validate the subject contains an allowed client ID (if applicable)
+      // Validate the subject contains an allowed client ID (if configured)
       const subject = eventData?.subject
-      if (subject?.iss && !ALLOWED_CLIENT_IDS.includes(subject.iss)) {
+      const allowedClientIds = getAllowedClientIds()
+      if (allowedClientIds && subject?.iss && !allowedClientIds.has(subject.iss)) {
         console.warn(`[RISC] Event from unknown client ID: ${subject.iss}`)
       }
 
@@ -110,7 +132,6 @@ export async function GET() {
   return NextResponse.json({
     status: "ok",
     service: "Google RISC Receiver",
-    project: "InTellMe",
-    endpoint: "/security-event-receiver",
+    audience: getExpectedAudience(),
   })
 }
